@@ -28,6 +28,7 @@ standards = {'pH': 8.5, 'DO': 14, 'BOD': 6, 'Temp': 25,
 ideals = {'pH': 7.0, 'DO': 7.0, 'BOD': 0, 'Temp': 4,
           'FecalColiform': 0, 'TotalColiform': 0, 'Conductivity': 0, 'NO3-': 0}
 
+# WQI formula
 def calculate_wqi(df):
     weighted_q = []
     for param in parameters:
@@ -39,6 +40,7 @@ def calculate_wqi(df):
     df['WQI'] = sum(weighted_q) / sum(weights.values())
     return df
 
+# Prophet forecasting
 def prophet_forecast_parameters(df, parameters, future_years):
     future_df = pd.DataFrame({'year_num': future_years})
     for param in parameters:
@@ -163,7 +165,6 @@ if uploaded_file:
         else:
             future_wqi = models[best_model_name].predict(future_df[parameters])
 
-        # Smooth & clip WQI
         wqi_min, wqi_max = np.percentile(df['WQI'], 5), np.percentile(df['WQI'], 95)
         future_wqi = np.clip(future_wqi, wqi_min, wqi_max)
         if len(future_wqi) >= 5:
