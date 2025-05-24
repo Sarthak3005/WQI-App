@@ -11,11 +11,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from scipy.signal import savgol_filter
-from xgboost import XGBRegressor
 
 st.set_page_config(layout="wide")
 st.title("💧 Water Quality Index (WQI) Model Comparison")
 
+# WQI formula
 def calculate_wqi(df):
     weighted_q = []
     for param in parameters:
@@ -27,6 +27,7 @@ def calculate_wqi(df):
     df['WQI'] = sum(weighted_q) / sum(weights.values())
     return df
 
+# Prophet forecasting
 def prophet_forecast_parameters(df, parameters, future_years):
     future_df = pd.DataFrame({'year_num': future_years})
     for param in parameters:
@@ -110,7 +111,7 @@ if uploaded_file:
         ax.grid(True)
         st.pyplot(fig)
 
-    # Models
+    # Model training
     model_results = []
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -120,14 +121,13 @@ if uploaded_file:
         'Linear Regression': LinearRegression(),
         'Random Forest': RandomForestRegressor(random_state=42),
         'SVR': SVR(C=100, epsilon=0.1),
-        'Decision Tree': DecisionTreeRegressor(random_state=42),
-        'XGBoost': XGBRegressor(objective='reg:squarederror', random_state=42)
+        'Decision Tree': DecisionTreeRegressor(random_state=42)
     }
 
     predictions = {}
 
     for name, model in models.items():
-        if name in ['SVR', 'XGBoost']:
+        if name == 'SVR':
             model.fit(X_train_scaled, y_train)
             preds = model.predict(X_test_scaled)
         else:
@@ -149,6 +149,7 @@ if uploaded_file:
     st.markdown("### 📊 Model Comparison Table:")
     st.dataframe(df_results.style.highlight_max(axis=0, color='lightgreen'))
 
+    # WQI per year
     st.markdown("### 📅 WQI Per Year")
     per_year_df = pd.DataFrame({'year': years_test})
     for name, preds in predictions.items():
@@ -172,17 +173,19 @@ if uploaded_file:
         category = "Very Poor"
     st.success(f"✅ Best Model: {best_model_name}, Avg WQI: {avg_wqi:.2f} → {category}")
 
-    # 🔮 Future Prediction (using Prophet for parameters, XGBoost for WQI)
-    st.markdown("### 🔮 Future WQI Prediction (2012–2027 using Prophet & XGBoost)")
+    # 🔮 Future Prediction (Prophet Forecast)
+    st.markdown("### 🔮 Future WQI Prediction (2012–2027 using Prophet)")
     future_years = np.arange(2012, 2028)
     future_df = prophet_forecast_parameters(df, parameters, future_years)
     future_df = calculate_wqi(future_df)
 
-    # XGBoost used for future prediction
-    future_scaled = scaler.transform(future_df[parameters])
-    future_wqi = models['XGBoost'].predict(future_scaled)
+    # Future WQI Prediction
+    if best_model_name == 'SVR':
+        future_wqi = models['SVR'].predict(scaler.transform(future_df[parameters]))
+    else:
+        future_wqi = models[best_model_name].predict(future_df[parameters])
 
-    # Smoothing & Clipping
+    # Clip & smooth
     wqi_min, wqi_max = np.percentile(df['WQI'], 5), np.percentile(df['WQI'], 95)
     future_wqi = np.clip(future_wqi, wqi_min, wqi_max)
     if len(future_wqi) >= 5:
@@ -190,7 +193,7 @@ if uploaded_file:
 
     fig, ax = plt.subplots()
     ax.plot(future_df['year_num'], future_wqi, marker='o', color='purple')
-    ax.set_title("Future WQI Forecast - XGBoost")
+    ax.set_title(f"Future WQI Forecast - {best_model_name}")
     ax.set_xlabel("Year")
     ax.set_ylabel("WQI")
     ax.grid(True)
