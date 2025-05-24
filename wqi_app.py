@@ -1,4 +1,3 @@
-%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,11 +11,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from scipy.signal import savgol_filter
-from xgboost import XGBRegressor
 
 st.set_page_config(layout="wide")
 st.title("💧 Water Quality Index (WQI) Model Comparison")
 
+# WQI formula
 def calculate_wqi(df):
     weighted_q = []
     for param in parameters:
@@ -28,9 +27,9 @@ def calculate_wqi(df):
     df['WQI'] = sum(weighted_q) / sum(weights.values())
     return df
 
+# Prophet forecasting
 def prophet_forecast_parameters(df, parameters, future_years):
     future_df = pd.DataFrame({'year_num': future_years})
-
     for param in parameters:
         sub = df[['year_num', param]].dropna()
         if len(sub) < 5:
@@ -45,17 +44,10 @@ def prophet_forecast_parameters(df, parameters, future_years):
             future = pd.DataFrame({'ds': pd.date_range(start=f"{future_years[0]}", periods=len(future_years), freq='Y')})
             forecast = m.predict(future)
             predicted = forecast['yhat'].values
-
-            # Use 5th and 95th percentiles instead of strict min/max
-            lower, upper = np.percentile(sub[param], [5, 95])
-            predicted = np.clip(predicted, lower, upper)
-
-            if len(predicted) >= 5:
-                predicted = savgol_filter(predicted, window_length=5, polyorder=2)
-
+            min_val, max_val = sub[param].min(), sub[param].max()
+            predicted = np.clip(predicted, min_val, max_val)
             future_df[param] = predicted
 
-            # Plot
             fig, ax = plt.subplots()
             ax.plot(yearly_avg['ds'].dt.year, yearly_avg['y'], label='Actual', color='blue')
             ax.plot(future['ds'].dt.year, predicted, label='Forecast', color='red')
@@ -66,15 +58,12 @@ def prophet_forecast_parameters(df, parameters, future_years):
             ax.grid(True)
             st.pyplot(fig)
 
-            st.write(f"🔍 Forecasted {param} (last 5 years):")
-            st.dataframe(pd.DataFrame({'Year': future['ds'].dt.year[-5:], param: predicted[-5:]}))
-
         except Exception as e:
             st.warning(f"⚠️ Prophet failed for {param}. Reason: {e}")
             continue
-
     return future_df
 
+# File upload
 uploaded_file = st.file_uploader("📁 Upload your Water Quality CSV file", type=["csv"])
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
@@ -122,6 +111,7 @@ if uploaded_file:
         ax.grid(True)
         st.pyplot(fig)
 
+    # Model training
     model_results = []
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -131,14 +121,13 @@ if uploaded_file:
         'Linear Regression': LinearRegression(),
         'Random Forest': RandomForestRegressor(random_state=42),
         'SVR': SVR(C=100, epsilon=0.1),
-        'Decision Tree': DecisionTreeRegressor(random_state=42),
-        'XGBoost': XGBRegressor(objective='reg:squarederror', random_state=42)
+        'Decision Tree': DecisionTreeRegressor(random_state=42)
     }
 
     predictions = {}
 
     for name, model in models.items():
-        if name in ['SVR', 'XGBoost']:
+        if name == 'SVR':
             model.fit(X_train_scaled, y_train)
             preds = model.predict(X_test_scaled)
         else:
@@ -160,12 +149,14 @@ if uploaded_file:
     st.markdown("### 📊 Model Comparison Table:")
     st.dataframe(df_results.style.highlight_max(axis=0, color='lightgreen'))
 
+    # WQI per year
     st.markdown("### 📅 WQI Per Year")
     per_year_df = pd.DataFrame({'year': years_test})
     for name, preds in predictions.items():
         per_year_df[name] = preds
     st.dataframe(per_year_df.groupby('year').mean().reset_index().style.format("{:.2f}"))
 
+    # Recommendation
     st.markdown("### 🤖 Recommended Model")
     best_model = df_results.sort_values(by="R2", ascending=False).iloc[0]
     best_model_name = best_model["Model"]
@@ -182,19 +173,27 @@ if uploaded_file:
         category = "Very Poor"
     st.success(f"✅ Best Model: {best_model_name}, Avg WQI: {avg_wqi:.2f} → {category}")
 
-    st.markdown("### 🔮 Future WQI Prediction (2012–2027 using Prophet & XGBoost)")
+    # 🔮 Future Prediction (Prophet Forecast)
+    st.markdown("### 🔮 Future WQI Prediction (2012–2027 using Prophet)")
     future_years = np.arange(2012, 2028)
     future_df = prophet_forecast_parameters(df, parameters, future_years)
     future_df = calculate_wqi(future_df)
-    future_scaled = scaler.transform(future_df[parameters])
-    future_wqi = models['XGBoost'].predict(future_scaled)
-    wqi_min, wqi_max = np.percentile(df['WQI'], [5, 95])
+
+    # Future WQI Prediction
+    if best_model_name == 'SVR':
+        future_wqi = models['SVR'].predict(scaler.transform(future_df[parameters]))
+    else:
+        future_wqi = models[best_model_name].predict(future_df[parameters])
+
+    # Clip & smooth
+    wqi_min, wqi_max = np.percentile(df['WQI'], 5), np.percentile(df['WQI'], 95)
     future_wqi = np.clip(future_wqi, wqi_min, wqi_max)
     if len(future_wqi) >= 5:
         future_wqi = savgol_filter(future_wqi, window_length=5, polyorder=2)
+
     fig, ax = plt.subplots()
     ax.plot(future_df['year_num'], future_wqi, marker='o', color='purple')
-    ax.set_title("Future WQI Forecast - XGBoost")
+    ax.set_title(f"Future WQI Forecast - {best_model_name}")
     ax.set_xlabel("Year")
     ax.set_ylabel("WQI")
     ax.grid(True)
