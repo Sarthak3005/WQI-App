@@ -4,5 +4,5 @@ numpy
 matplotlib
 scikit-learn
 prophet
-xgboost
 scipy
+xgboost
