@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from scipy.signal import savgol_filter
+import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
 st.title("💧 Water Quality Index (WQI) Prediction & Forecast App")
@@ -40,7 +41,7 @@ def calculate_wqi(df):
     df['WQI'] = sum(weighted_q) / sum(weights.values())
     return df
 
-# Prophet forecasting
+# Prophet Forecasting
 def prophet_forecast_parameters(df, parameters, future_years):
     future_df = pd.DataFrame({'year_num': future_years})
     for param in parameters:
@@ -50,7 +51,6 @@ def prophet_forecast_parameters(df, parameters, future_years):
         yearly_avg = sub.groupby('year_num')[param].mean().reset_index()
         yearly_avg.columns = ['ds', 'y']
         yearly_avg['ds'] = pd.to_datetime(yearly_avg['ds'], format='%Y')
-
         try:
             m = Prophet(yearly_seasonality=True)
             m.fit(yearly_avg)
@@ -60,7 +60,6 @@ def prophet_forecast_parameters(df, parameters, future_years):
             min_val, max_val = sub[param].min(), sub[param].max()
             predicted = np.clip(predicted, min_val, max_val)
             future_df[param] = predicted
-
             with st.expander(f"📈 Forecast Plot for {param}", expanded=False):
                 fig, ax = plt.subplots()
                 ax.plot(yearly_avg['ds'].dt.year, yearly_avg['y'], label='Actual', color='blue')
@@ -75,82 +74,99 @@ def prophet_forecast_parameters(df, parameters, future_years):
             st.warning(f"⚠️ Prophet failed for {param}: {e}")
     return future_df
 
-# If file uploaded
+# --- MAIN LOGIC ---
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.success("✅ File uploaded successfully.")
     df['year'] = pd.to_datetime(df['year_num'], errors='coerce', format='%Y')
     df['year_num'] = df['year'].dt.year
-
     df = calculate_wqi(df).dropna(subset=parameters + ['WQI', 'year_num'])
+
     X = df[parameters]
     y = df['WQI']
     years = df['year_num']
     X_train, X_test, y_train, y_test, years_train, years_test = train_test_split(X, y, years, test_size=0.2, random_state=42)
 
-    # Tabs for Results
-    tab1, tab2, tab3 = st.tabs(["📊 Model Training", "📅 Year-wise WQI", "🔮 Future Forecast"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Model Training", "📅 WQI Stats", "🔮 Forecast", "🧪 Try Your Own Inputs"])
 
     with tab1:
         st.subheader("📊 Model Evaluation & Error Analysis")
-        with st.spinner("Training models..."):
-            model_results = []
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-            models = {
-                'Linear Regression': LinearRegression(),
-                'Random Forest': RandomForestRegressor(random_state=42),
-                'SVR': SVR(C=100, epsilon=0.1),
-                'Decision Tree': DecisionTreeRegressor(random_state=42)
-            }
-            predictions = {}
+        model_results = []
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        models = {
+            'Linear Regression': LinearRegression(),
+            'Random Forest': RandomForestRegressor(random_state=42),
+            'SVR': SVR(C=100, epsilon=0.1),
+            'Decision Tree': DecisionTreeRegressor(random_state=42)
+        }
+        predictions = {}
+        for name, model in models.items():
+            if name == 'SVR':
+                model.fit(X_train_scaled, y_train)
+                preds = model.predict(X_test_scaled)
+            else:
+                model.fit(X_train, y_train)
+                preds = model.predict(X_test)
+            predictions[name] = preds
+            with st.expander(f"{name} - Error Analysis", expanded=False):
+                fig, ax = plt.subplots()
+                ax.scatter(y_test, preds, alpha=0.6)
+                ax.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], 'r--')
+                ax.set_title(f"{name}: Actual vs Predicted WQI")
+                st.pyplot(fig)
+            model_results.append({
+                'Model': name,
+                'R2': r2_score(y_test, preds),
+                'MAE': mean_absolute_error(y_test, preds),
+                'RMSE': np.sqrt(mean_squared_error(y_test, preds)),
+                'WQI Mean': preds.mean()
+            })
 
-            for name, model in models.items():
-                if name == 'SVR':
-                    model.fit(X_train_scaled, y_train)
-                    preds = model.predict(X_test_scaled)
-                else:
-                    model.fit(X_train, y_train)
-                    preds = model.predict(X_test)
-                predictions[name] = preds
+        df_results = pd.DataFrame(model_results)
+        df_results['Accuracy (%)'] = (1 - df_results['MAE'] / y_test.mean()) * 100
+        st.dataframe(df_results.style.highlight_max(axis=0, color='lightgreen'))
 
-                with st.expander(f"📈 {name} - WQI Trend & Error Analysis", expanded=False):
-                    fig1, ax1 = plt.subplots()
-                    ax1.scatter(years_test, preds, color='blue')
-                    ax1.set_title(f'WQI vs Year - {name}')
-                    ax1.set_xlabel("Year")
-                    ax1.set_ylabel("WQI")
-                    ax1.grid(True)
-                    st.pyplot(fig1)
-
-                    fig2, ax2 = plt.subplots()
-                    ax2.scatter(y_test, preds, alpha=0.6)
-                    ax2.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], 'r--')
-                    ax2.set_title(f"{name} - Actual vs Predicted")
-                    ax2.set_xlabel("Actual")
-                    ax2.set_ylabel("Predicted")
-                    ax2.grid(True)
-                    st.pyplot(fig2)
-
-                model_results.append({
-                    'Model': name,
-                    'R2': r2_score(y_test, preds),
-                    'MAE': mean_absolute_error(y_test, preds),
-                    'RMSE': np.sqrt(mean_squared_error(y_test, preds)),
-                    'WQI Mean': preds.mean()
-                })
-
-            df_results = pd.DataFrame(model_results)
-            df_results['Accuracy (%)'] = (1 - df_results['MAE'] / y_test.mean()) * 100
-            st.dataframe(df_results.style.highlight_max(axis=0, color='lightgreen'))
+        # 📊 Combined Comparison Chart
+        st.markdown("### 📊 Combined Model Comparison (R², MAE, RMSE)")
+        melted = df_results.melt(id_vars='Model', value_vars=['R2', 'MAE', 'RMSE'], var_name='Metric', value_name='Score')
+        fig, ax = plt.subplots(figsize=(8, 5))
+        metrics = ['R2', 'MAE', 'RMSE']
+        bar_width = 0.2
+        positions = np.arange(len(df_results))
+        for i, metric in enumerate(metrics):
+            values = melted[melted['Metric'] == metric]['Score'].values
+            ax.bar(positions + i * bar_width, values, width=bar_width, label=metric)
+        ax.set_xticks(positions + bar_width)
+        ax.set_xticklabels(df_results['Model'])
+        ax.set_title("Model Comparison - R², MAE, RMSE")
+        ax.set_ylabel("Score")
+        ax.legend()
+        ax.grid(True)
+        st.pyplot(fig)
 
     with tab2:
-        st.subheader("📅 WQI Per Year (Average)")
+        st.subheader("📅 WQI Per Year + Category Distribution")
         per_year_df = pd.DataFrame({'Year': years_test})
         for name, preds in predictions.items():
             per_year_df[name] = preds
-        st.dataframe(per_year_df.groupby('Year').mean().reset_index().style.format("{:.2f}"))
+        avg_df = per_year_df.groupby('Year').mean().reset_index()
+        st.dataframe(avg_df.style.format("{:.2f}"))
+
+        def wqi_category(val):
+            if val <= 25: return 'Excellent'
+            elif val <= 50: return 'Good'
+            elif val <= 75: return 'Medium'
+            elif val <= 100: return 'Poor'
+            else: return 'Very Poor'
+        df['Category'] = df['WQI'].apply(wqi_category)
+        cat_dist = df.groupby(['year_num', 'Category']).size().unstack(fill_value=0)
+        cat_dist.plot(kind='bar', stacked=True, figsize=(10, 5))
+        plt.title("WQI Category Distribution Over Years")
+        plt.xlabel("Year")
+        plt.ylabel("Number of Records")
+        st.pyplot(plt.gcf())
 
     with tab3:
         st.subheader("🔮 Future WQI Prediction (2012–2027)")
@@ -165,10 +181,9 @@ if uploaded_file:
         else:
             future_wqi = models[best_model_name].predict(future_df[parameters])
 
-        wqi_min, wqi_max = np.percentile(df['WQI'], 5), np.percentile(df['WQI'], 95)
-        future_wqi = np.clip(future_wqi, wqi_min, wqi_max)
+        future_wqi = np.clip(future_wqi, np.percentile(df['WQI'], 5), np.percentile(df['WQI'], 95))
         if len(future_wqi) >= 5:
-            future_wqi = savgol_filter(future_wqi, window_length=5, polyorder=2)
+            future_wqi = savgol_filter(future_wqi, 5, 2)
 
         fig, ax = plt.subplots()
         ax.plot(future_df['year_num'], future_wqi, marker='o', color='purple')
@@ -178,7 +193,65 @@ if uploaded_file:
         ax.grid(True)
         st.pyplot(fig)
 
-        st.success(f"✅ Best Model: {best_model_name}, Avg WQI: {best_model['WQI Mean']:.2f}")
+    with tab4:
+        st.subheader("🧪 Try Your Own Parameters (What-If Simulator)")
+
+        sim_year = st.slider("📅 Simulate WQI for Year", 2025, 2050, 2030)
+
+        user_input = {}
+        col_row1 = st.columns(4)
+        for i, param in enumerate(parameters[:4]):
+            with col_row1[i]:
+                min_val = float(df[param].min())
+                max_val = float(df[param].max())
+                mean_val = float(df[param].mean())
+                user_input[param] = st.slider(f"{param}", min_val, max_val, mean_val)
+
+        col_row2 = st.columns(4)
+        for i, param in enumerate(parameters[4:]):
+            with col_row2[i]:
+                min_val = float(df[param].min())
+                max_val = float(df[param].max())
+                mean_val = float(df[param].mean())
+                user_input[param] = st.slider(f"{param}", min_val, max_val, mean_val)
+
+        user_df = pd.DataFrame([user_input])
+        user_df = calculate_wqi(user_df)
+        wqi_value = float(user_df['WQI'].iloc[0])
+
+        def get_category(wqi):
+            if wqi <= 25: return "🟢 Excellent"
+            elif wqi <= 50: return "🟢 Good"
+            elif wqi <= 75: return "🟠 Medium"
+            elif wqi <= 100: return "🔴 Poor"
+            else: return "⚫ Very Poor"
+
+        category = get_category(wqi_value)
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=wqi_value,
+                title={'text': "Simulated WQI"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "purple"},
+                    'steps': [
+                        {'range': [0, 25], 'color': "green"},
+                        {'range': [25, 50], 'color': "lime"},
+                        {'range': [50, 75], 'color': "orange"},
+                        {'range': [75, 100], 'color': "red"},
+                    ],
+                    'threshold': {'line': {'color': "black", 'width': 4}, 'value': wqi_value}
+                }
+            ))
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            st.markdown("### WQI Category")
+            st.markdown(f"<h2 style='text-align:center'>{category}</h2>", unsafe_allow_html=True)
 
 else:
     st.info("👈 Upload your CSV from the sidebar to get started.")
