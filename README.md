@@ -129,7 +129,7 @@ After model training and testing on uploaded data:
 ## 📬 Contact
 
 **Developer:** Sarthak  
-📧 Email: sarthak.wqi@example.com *(replace with your email)*  
+📧 Email: sarthak.21141@knit.ac.in
 🔗 GitHub: [github.com/Sarthak3005](https://github.com/Sarthak3005)
 
 ---
