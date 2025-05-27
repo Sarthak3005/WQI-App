@@ -162,6 +162,22 @@ if uploaded_file:
         ax.legend(loc='upper right')
         ax.grid(axis='y', linestyle='--', alpha=0.6)
         st.pyplot(fig)
+        
+        # 📌 Combined Actual vs Predicted WQI Plots for All Models
+        with st.expander("📌 Combined Actual vs Predicted Plots (All Models)", expanded=False):
+            st.markdown("These plots show how closely each model's predictions match the actual WQI values.")
+
+            for name, preds in predictions.items():
+                fig, ax = plt.subplots(figsize=(6, 4))
+                scatter = ax.scatter(y_test, preds, color='blue', alpha=0.6, edgecolors='k', label='Predicted WQI')
+                line = ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Actual = Predicted')
+        
+                ax.set_title(f"{name}: Actual vs Predicted WQI")
+                ax.set_xlabel("Actual WQI")
+                ax.set_ylabel("Predicted WQI")
+                ax.legend(loc='upper left')
+                ax.grid(True)
+                st.pyplot(fig)
 
 
     with tab2:
