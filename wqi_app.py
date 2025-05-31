@@ -163,6 +163,24 @@ if uploaded_file:
         ax.grid(axis='y', linestyle='--', alpha=0.6)
         st.pyplot(fig)
         
+        # 🏆 Recommended Model Display Based on R²
+        st.markdown("### 🏆 Recommended Model Based on Performance")
+        best_model_row = df_results.sort_values(by="R2", ascending=False).iloc[0]
+        best_model_name = best_model_row['Model']
+        best_model_r2 = best_model_row['R2']
+        best_model_mae = best_model_row['MAE']
+        best_model_rmse = best_model_row['RMSE']
+        best_model_wqi_mean = best_model_row['WQI Mean']
+
+        st.success(
+            f"**Model:** {best_model_name}  \n"
+            f"**R² Score:** {best_model_r2:.4f}  \n"
+            f"**MAE:** {best_model_mae:.4f}  \n"
+            f"**RMSE:** {best_model_rmse:.4f}  \n"
+            f"**Average Predicted WQI:** {best_model_wqi_mean:.2f}"
+)
+
+        
         # 📌 Combined Actual vs Predicted WQI Plots for All Models
         with st.expander("📌 Combined Actual vs Predicted Plots (All Models)", expanded=False):
             st.markdown("These plots show how closely each model's predictions match the actual WQI values.")
@@ -178,8 +196,7 @@ if uploaded_file:
                 ax.legend(loc='upper left')
                 ax.grid(True)
                 st.pyplot(fig)
-
-
+          
     with tab2:
         st.subheader("📅 WQI Per Year + Category Distribution")
         per_year_df = pd.DataFrame({'Year': years_test})
