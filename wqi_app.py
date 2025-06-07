@@ -71,7 +71,7 @@ def prophet_forecast_parameters(df, parameters, future_years):
                 ax.grid(True)
                 st.pyplot(fig)
         except Exception as e:
-            st.warning(f"⚠️ Prophet failed for {param}: {e}")
+            st.warning(f⚠️ Prophet failed for {param}: {e}")
     return future_df
 
 # --- MAIN LOGIC ---
@@ -128,24 +128,75 @@ if uploaded_file:
         df_results['Accuracy (%)'] = (1 - df_results['MAE'] / y_test.mean()) * 100
         st.dataframe(df_results.style.highlight_max(axis=0, color='lightgreen'))
 
-        # 📊 Combined Comparison Chart
+        # 📊 Final Enhanced Comparison Chart with Labels on All Bars
         st.markdown("### 📊 Combined Model Comparison (R², MAE, RMSE)")
-        melted = df_results.melt(id_vars='Model', value_vars=['R2', 'MAE', 'RMSE'], var_name='Metric', value_name='Score')
-        fig, ax = plt.subplots(figsize=(8, 5))
-        metrics = ['R2', 'MAE', 'RMSE']
-        bar_width = 0.2
-        positions = np.arange(len(df_results))
-        for i, metric in enumerate(metrics):
-            values = melted[melted['Metric'] == metric]['Score'].values
-            ax.bar(positions + i * bar_width, values, width=bar_width, label=metric)
-        ax.set_xticks(positions + bar_width)
-        ax.set_xticklabels(df_results['Model'])
-        ax.set_title("Model Comparison - R², MAE, RMSE")
-        ax.set_ylabel("Score")
-        ax.legend()
-        ax.grid(True)
-        st.pyplot(fig)
 
+        model_names = df_results['Model'].tolist()
+        r2_scores = df_results['R2'].tolist()
+        maes = df_results['MAE'].tolist()
+        rmses = df_results['RMSE'].tolist()
+
+        x = np.arange(len(model_names))
+        width = 0.25
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars1 = ax.bar(x - width, r2_scores, width, label='R² Score', color='royalblue')
+        bars2 = ax.bar(x, maes, width, label='MAE', color='orange')
+        bars3 = ax.bar(x + width, rmses, width, label='RMSE', color='green')
+
+        # Add value labels on all bars
+        for bars in [bars1, bars2, bars3]:
+            for bar in bars:
+                height = bar.get_height()
+                ax.annotate(f'{height:.2f}',
+                           xy=(bar.get_x() + bar.get_width() / 2, height),
+                           xytext=(0, 5),
+                           textcoords="offset points",
+                           ha='center', va='bottom', fontsize=9)
+
+        ax.set_xlabel('Model')
+        ax.set_ylabel('Metric Value')
+        ax.set_title('Model Comparison - R², MAE, RMSE')
+        ax.set_xticks(x)
+        ax.set_xticklabels(model_names, rotation=15)
+        ax.legend(loc='upper right')
+        ax.grid(axis='y', linestyle='--', alpha=0.6)
+        st.pyplot(fig)
+        
+        # 🏆 Recommended Model Display Based on R²
+        st.markdown("### 🏆 Recommended Model Based on Performance")
+        best_model_row = df_results.sort_values(by="R2", ascending=False).iloc[0]
+        best_model_name = best_model_row['Model']
+        best_model_r2 = best_model_row['R2']
+        best_model_mae = best_model_row['MAE']
+        best_model_rmse = best_model_row['RMSE']
+        best_model_wqi_mean = best_model_row['WQI Mean']
+
+        st.success(
+            f"**Model:** {best_model_name}  \n"
+            f"**R² Score:** {best_model_r2:.4f}  \n"
+            f"**MAE:** {best_model_mae:.4f}  \n"
+            f"**RMSE:** {best_model_rmse:.4f}  \n"
+            f"**Average Predicted WQI:** {best_model_wqi_mean:.2f}"
+)
+
+        
+        # 📌 Combined Actual vs Predicted WQI Plots for All Models
+        with st.expander("📌 Combined Actual vs Predicted Plots (All Models)", expanded=False):
+            st.markdown("These plots show how closely each model's predictions match the actual WQI values.")
+
+            for name, preds in predictions.items():
+                fig, ax = plt.subplots(figsize=(6, 4))
+                scatter = ax.scatter(y_test, preds, color='blue', alpha=0.6, edgecolors='k', label='Predicted WQI')
+                line = ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label='Actual = Predicted')
+        
+                ax.set_title(f"{name}: Actual vs Predicted WQI")
+                ax.set_xlabel("Actual WQI")
+                ax.set_ylabel("Predicted WQI")
+                ax.legend(loc='upper left')
+                ax.grid(True)
+                st.pyplot(fig)
+          
     with tab2:
         st.subheader("📅 WQI Per Year + Category Distribution")
         per_year_df = pd.DataFrame({'Year': years_test})
@@ -162,12 +213,18 @@ if uploaded_file:
             else: return 'Very Poor'
         df['Category'] = df['WQI'].apply(wqi_category)
         cat_dist = df.groupby(['year_num', 'Category']).size().unstack(fill_value=0)
-        cat_dist.plot(kind='bar', stacked=True, figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(10,5))
+        cat_dist.plot(kind='bar', stacked=True, ax=ax)
+        totals = cat_dist.sum(axis=1)
+
+        for i, total in enumerate(totals):
+            ax.text(i, total + 2, str(total), ha='center', fontweight='bold')
         plt.title("WQI Category Distribution Over Years")
         plt.xlabel("Year")
         plt.ylabel("Number of Records")
-        st.pyplot(plt.gcf())
-
+        plt.legend(title="Category")
+        st.pyplot(fig)
+        
     with tab3:
         st.subheader("🔮 Future WQI Prediction (2012–2027)")
         future_years = np.arange(2012, 2028)
@@ -191,6 +248,12 @@ if uploaded_file:
         ax.set_xlabel("Year")
         ax.set_ylabel("WQI")
         ax.grid(True)
+
+        # Annotate each point with alternating above/below text
+        for i, (x,y) in enumerate(zip(future_df['year_num'], future_wqi)):
+            offset = 5 if i % 2 ==0 else -10
+            ax.annotate(f"{y:.2f}", (x,y), textcoords="offset points", xytext=(0, offset), ha='center', fontsize=9)
+
         st.pyplot(fig)
 
     with tab4:
