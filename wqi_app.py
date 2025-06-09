@@ -71,7 +71,7 @@ def prophet_forecast_parameters(df, parameters, future_years):
                 ax.grid(True)
                 st.pyplot(fig)
         except Exception as e:
-            st.warning(f⚠️ Prophet failed for {param}: {e}")
+            st.warning(f"⚠️ Prophet failed for {param}: {e}")
     return future_df
 
 # --- MAIN LOGIC ---
